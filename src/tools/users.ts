@@ -1,155 +1,193 @@
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { z } from "zod";
+
 import { OmvClient } from "../omv-client.js";
 
-function toolResult(text: string, isError = false) {
-  return { content: [{ type: "text" as const, text }], isError };
-}
-
-export function registerUserTools(server: McpServer, client: OmvClient) {
-  // ── List Users ───────────────────────────────────────────────────────
+export function registerUserTools(
+  server: any,
+  client: OmvClient,
+): void {
   server.tool(
     "list_users",
-    "List all local user accounts in OpenMediaVault with UID, GID, groups, and account details",
-    {
-      limit: z
-        .number()
-        .optional()
-        .default(100)
-        .describe("Maximum number of users to return"),
-    },
-    async ({ limit }) => {
+    "List all system users",
+    {},
+    async () => {
       try {
-        const result = await client.getList("UserMgmt", "getList", {
-          start: 0,
-          limit,
-          sortfield: null,
-          sortdir: null,
-        });
-        return toolResult(JSON.stringify(result, null, 2));
-      } catch (error) {
-        return toolResult(`Error fetching user list: ${error}`, true);
+        let result;
+        if (client.omvVersion === "omv8") {
+          result = await client.getList("UserMgmt", "getUserList", {});
+        } else {
+          result = await client.getList("UserMgmt", "getList", {});
+        }
+        return {
+          content: [
+            { type: "text", text: JSON.stringify(result, null, 2) },
+          ],
+        };
+      } catch (error: any) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: "Error listing users: " + error.message,
+            },
+          ],
+        };
       }
     },
   );
 
-  // ── Get User Details ─────────────────────────────────────────────────
   server.tool(
     "get_user",
-    "Get detailed information about a specific user account",
+    "Get details of a specific user",
     {
-      name: z.string().describe("Username to look up"),
+      username: {
+        type: "string",
+        description: "The username",
+        required: true,
+      },
     },
-    async ({ name }) => {
+    async (args: any) => {
       try {
-        const result = await client.rpc("UserMgmt", "get", { name });
-        return toolResult(JSON.stringify(result, null, 2));
-      } catch (error) {
-        return toolResult(
-          `Error fetching user '${name}': ${error}`,
-          true,
-        );
+        let result;
+        if (client.omvVersion === "omv8") {
+          result = await client.rpc("UserMgmt", "getUser", { name: args.username });
+        } else {
+          result = await client.rpc("UserMgmt", "get", { name: args.username });
+        }
+        return {
+          content: [
+            { type: "text", text: JSON.stringify(result, null, 2) },
+          ],
+        };
+      } catch (error: any) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: "Error getting user: " + error.message,
+            },
+          ],
+        };
       }
     },
   );
 
-  // ── List Groups ──────────────────────────────────────────────────────
   server.tool(
     "list_groups",
-    "List all local groups in OpenMediaVault with GID, comment, and member list",
-    {
-      limit: z
-        .number()
-        .optional()
-        .default(100)
-        .describe("Maximum number of groups to return"),
-    },
-    async ({ limit }) => {
+    "List all system groups",
+    {},
+    async () => {
       try {
-        const result = await client.getList("GroupMgmt", "getList", {
-          start: 0,
-          limit,
-          sortfield: null,
-          sortdir: null,
-        });
-        return toolResult(JSON.stringify(result, null, 2));
-      } catch (error) {
-        return toolResult(`Error fetching group list: ${error}`, true);
+        let result;
+        if (client.omvVersion === "omv8") {
+          result = await client.getList("UserMgmt", "getGroupList", {});
+        } else {
+          result = await client.getList("GroupMgmt", "getList", {});
+        }
+        return {
+          content: [
+            { type: "text", text: JSON.stringify(result, null, 2) },
+          ],
+        };
+      } catch (error: any) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: "Error listing groups: " + error.message,
+            },
+          ],
+        };
       }
     },
   );
 
-  // ── Get Group Details ────────────────────────────────────────────────
   server.tool(
     "get_group",
-    "Get detailed information about a specific group",
+    "Get details of a specific group",
     {
-      name: z.string().describe("Group name to look up"),
+      groupname: {
+        type: "string",
+        description: "The group name",
+        required: true,
+      },
     },
-    async ({ name }) => {
+    async (args: any) => {
       try {
-        const result = await client.rpc("GroupMgmt", "get", { name });
-        return toolResult(JSON.stringify(result, null, 2));
-      } catch (error) {
-        return toolResult(
-          `Error fetching group '${name}': ${error}`,
-          true,
-        );
+        let result;
+        if (client.omvVersion === "omv8") {
+          result = await client.rpc("UserMgmt", "getGroup", { name: args.groupname });
+        } else {
+          result = await client.rpc("GroupMgmt", "get", { name: args.groupname });
+        }
+        return {
+          content: [
+            { type: "text", text: JSON.stringify(result, null, 2) },
+          ],
+        };
+      } catch (error: any) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: "Error getting group: " + error.message,
+            },
+          ],
+        };
       }
     },
   );
 
-  // ── Enumerate Users ──────────────────────────────────────────────────
   server.tool(
-    "enumerate_users",
-    "Enumerate all system users including system accounts (broader than list_users which may only show OMV-managed accounts)",
+    "enumerate_local_users",
+    "Enumerate all local system users (including system users)",
     {},
     async () => {
       try {
         const result = await client.rpc("UserMgmt", "enumerateUsers", {});
-        return toolResult(JSON.stringify(result, null, 2));
-      } catch (error) {
-        return toolResult(`Error enumerating users: ${error}`, true);
+        return {
+          content: [
+            { type: "text", text: JSON.stringify(result, null, 2) },
+          ],
+        };
+      } catch (error: any) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: "Error enumerating users: " + error.message,
+            },
+          ],
+        };
       }
     },
   );
 
-  // ── Enumerate Groups ─────────────────────────────────────────────────
   server.tool(
-    "enumerate_groups",
-    "Enumerate all system groups including system groups",
+    "enumerate_local_groups",
+    "Enumerate all local system groups (including system groups)",
     {},
     async () => {
       try {
-        const result = await client.rpc("GroupMgmt", "enumerateGroups", {});
-        return toolResult(JSON.stringify(result, null, 2));
-      } catch (error) {
-        return toolResult(`Error enumerating groups: ${error}`, true);
-      }
-    },
-  );
-
-  // ── Get User Privileges (by shared folder) ───────────────────────────
-  server.tool(
-    "get_user_privileges",
-    "Get all shared folder privileges assigned to a specific user",
-    {
-      name: z
-        .string()
-        .describe("Username to get privileges for"),
-    },
-    async ({ name }) => {
-      try {
-        const result = await client.rpc("ShareMgmt", "getPrivilegesByRole", {
-          role: "user",
-          name,
-        });
-        return toolResult(JSON.stringify(result, null, 2));
-      } catch (error) {
-        return toolResult(
-          `Error fetching privileges for user '${name}': ${error}`,
-          true,
-        );
+        let result;
+        if (client.omvVersion === "omv8") {
+          result = await client.rpc("UserMgmt", "enumerateGroups", {});
+        } else {
+          result = await client.rpc("GroupMgmt", "enumerateGroups", {});
+        }
+        return {
+          content: [
+            { type: "text", text: JSON.stringify(result, null, 2) },
+          ],
+        };
+      } catch (error: any) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: "Error enumerating groups: " + error.message,
+            },
+          ],
+        };
       }
     },
   );

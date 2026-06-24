@@ -1,183 +1,179 @@
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { z } from "zod";
+
 import { OmvClient } from "../omv-client.js";
 
-function toolResult(text: string, isError = false) {
-  return { content: [{ type: "text" as const, text }], isError };
-}
-
-export function registerStorageTools(server: McpServer, client: OmvClient) {
-  // ── List Disks ───────────────────────────────────────────────────────
+export function registerStorageTools(
+  server: any,
+  client: OmvClient,
+): void {
   server.tool(
     "list_disks",
-    "List all physical disks detected by OpenMediaVault including model, vendor, size, serial number, temperature, and SMART status",
+    "List all physical disks",
     {},
     async () => {
       try {
-        const result = await client.getList("DiskMgmt", "getList", {
-          start: 0,
-          limit: 100,
-          sortfield: null,
-          sortdir: null,
-        });
-        return toolResult(JSON.stringify(result, null, 2));
-      } catch (error) {
-        return toolResult(`Error fetching disk list: ${error}`, true);
+        const result = await client.getList("DiskMgmt", "getListBg", {});
+        return {
+          content: [
+            { type: "text", text: JSON.stringify(result, null, 2) },
+          ],
+        };
+      } catch (error: any) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: "Error listing disks: " + error.message,
+            },
+          ],
+        };
       }
     },
   );
 
-  // ── List Filesystems ─────────────────────────────────────────────────
   server.tool(
     "list_filesystems",
-    "List all filesystems on the OpenMediaVault system including type, label, size, usage, and mount status",
+    "List all filesystems",
     {},
     async () => {
       try {
-        const result = await client.rpc(
-          "FileSystemMgmt",
-          "enumerateFileSystems",
-          {},
-        );
-        return toolResult(JSON.stringify(result, null, 2));
-      } catch (error) {
-        return toolResult(`Error fetching filesystem list: ${error}`, true);
+        let result;
+        if (client.omvVersion === "omv8") {
+          result = await client.getList("FileSystemMgmt", "enumerateFilesystems", {});
+        } else {
+          result = await client.getList("FileSystemMgmt", "enumerateFileSystems", {});
+        }
+        return {
+          content: [
+            { type: "text", text: JSON.stringify(result, null, 2) },
+          ],
+        };
+      } catch (error: any) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: "Error listing filesystems: " + error.message,
+            },
+          ],
+        };
       }
     },
   );
 
-  // ── Get Mounted Filesystems ──────────────────────────────────────────
   server.tool(
-    "get_mounted_filesystems",
-    "Get all currently mounted filesystems with their usage statistics",
+    "list_mounted_filesystems",
+    "List all mounted filesystems",
     {},
     async () => {
       try {
-        const result = await client.rpc(
-          "FileSystemMgmt",
-          "enumerateMountedFileSystems",
-          {},
-        );
-        return toolResult(JSON.stringify(result, null, 2));
-      } catch (error) {
-        return toolResult(
-          `Error fetching mounted filesystems: ${error}`,
-          true,
-        );
+        let result;
+        if (client.omvVersion === "omv8") {
+          result = await client.getList("FileSystemMgmt", "enumerateMountedFilesystems", {});
+        } else {
+          result = await client.getList("FileSystemMgmt", "enumerateMountedFileSystems", {});
+        }
+        return {
+          content: [
+            { type: "text", text: JSON.stringify(result, null, 2) },
+          ],
+        };
+      } catch (error: any) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: "Error listing mounted filesystems: " + error.message,
+            },
+          ],
+        };
       }
     },
   );
 
-  // ── Get SMART Info ───────────────────────────────────────────────────
+  server.tool(
+    "get_filesystem_candidates",
+    "Get filesystem creation candidates (available disks)",
+    {},
+    async () => {
+      try {
+        const result = await client.getList("FileSystemMgmt", "getCandidatesBg", {});
+        return {
+          content: [
+            { type: "text", text: JSON.stringify(result, null, 2) },
+          ],
+        };
+      } catch (error: any) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: "Error getting filesystem candidates: " + error.message,
+            },
+          ],
+        };
+      }
+    },
+  );
+
   server.tool(
     "get_smart_info",
-    "Get SMART attributes for a specific disk device to assess disk health",
+    "Get S.M.A.R.T. info for a disk",
     {
-      devicefile: z
-        .string()
-        .describe(
-          "Device file path of the disk (e.g., /dev/sda, /dev/sdb). Use list_disks to find device files.",
-        ),
+      device: {
+        type: "string",
+        description: "Device name (e.g., /dev/sda)",
+        required: true,
+      },
     },
-    async ({ devicefile }) => {
+    async (args: any) => {
       try {
-        const result = await client.rpc("Smart", "getAttributes", {
-          devicefile,
+        const result = await client.rpc("Smart", "getInformation", {
+          devicefile: args.device,
         });
-        return toolResult(JSON.stringify(result, null, 2));
-      } catch (error) {
-        return toolResult(
-          `Error fetching SMART info for ${devicefile}: ${error}`,
-          true,
-        );
+        return {
+          content: [
+            { type: "text", text: JSON.stringify(result, null, 2) },
+          ],
+        };
+      } catch (error: any) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: "Error getting S.M.A.R.T. info: " + error.message,
+            },
+          ],
+        };
       }
     },
   );
 
-  // ── Get SMART Extended Info ──────────────────────────────────────────
-  server.tool(
-    "get_smart_extended_info",
-    "Get extended SMART information for a specific disk including self-test results",
-    {
-      devicefile: z
-        .string()
-        .describe("Device file path of the disk (e.g., /dev/sda)"),
-    },
-    async ({ devicefile }) => {
-      try {
-        const result = await client.rpc("Smart", "getExtendedInformation", {
-          devicefile,
-        });
-        return toolResult(JSON.stringify(result, null, 2));
-      } catch (error) {
-        return toolResult(
-          `Error fetching extended SMART info for ${devicefile}: ${error}`,
-          true,
-        );
-      }
-    },
-  );
-
-  // ── Get SMART Settings ───────────────────────────────────────────────
-  server.tool(
-    "get_smart_device_settings",
-    "Get SMART monitoring settings for a specific disk",
-    {
-      devicefile: z
-        .string()
-        .describe("Device file path of the disk (e.g., /dev/sda)"),
-    },
-    async ({ devicefile }) => {
-      try {
-        const result = await client.rpc("Smart", "getDeviceSettings", {
-          devicefile,
-        });
-        return toolResult(JSON.stringify(result, null, 2));
-      } catch (error) {
-        return toolResult(
-          `Error fetching SMART settings for ${devicefile}: ${error}`,
-          true,
-        );
-      }
-    },
-  );
-
-  // ── List SMART Scheduled Jobs ────────────────────────────────────────
-  server.tool(
-    "list_smart_jobs",
-    "List all scheduled SMART self-test jobs configured in OpenMediaVault",
-    {},
-    async () => {
-      try {
-        const result = await client.getList("Smart", "getList", {
-          start: 0,
-          limit: 100,
-          sortfield: null,
-          sortdir: null,
-        });
-        return toolResult(JSON.stringify(result, null, 2));
-      } catch (error) {
-        return toolResult(`Error fetching SMART jobs: ${error}`, true);
-      }
-    },
-  );
-
-  // ── Get RAID Devices ─────────────────────────────────────────────────
   server.tool(
     "list_raid_devices",
-    "List all software RAID (mdadm) devices configured in OpenMediaVault",
+    "List RAID devices (if available)",
     {},
     async () => {
       try {
-        const result = await client.getList("RaidMgmt", "getList", {
-          start: 0,
-          limit: 100,
-          sortfield: null,
-          sortdir: null,
-        });
-        return toolResult(JSON.stringify(result, null, 2));
-      } catch (error) {
-        return toolResult(`Error fetching RAID devices: ${error}`, true);
+        let result;
+        if (client.omvVersion === "omv8") {
+          result = { note: "RAID management is handled via DiskMgmt on OMV 8; use list_disks to see all drives" };
+        } else {
+          result = await client.getList("RaidMgmt", "getList", {});
+        }
+        return {
+          content: [
+            { type: "text", text: JSON.stringify(result, null, 2) },
+          ],
+        };
+      } catch (error: any) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: "RAID info not available: " + error.message,
+            },
+          ],
+        };
       }
     },
   );

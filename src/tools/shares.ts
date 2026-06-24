@@ -1,159 +1,124 @@
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { z } from "zod";
+
 import { OmvClient } from "../omv-client.js";
 
-function toolResult(text: string, isError = false) {
-  return { content: [{ type: "text" as const, text }], isError };
-}
-
-export function registerShareTools(server: McpServer, client: OmvClient) {
-  // ── List Shared Folders ──────────────────────────────────────────────
+export function registerShareTools(
+  server: any,
+  client: OmvClient,
+): void {
   server.tool(
-    "list_shared_folders",
-    "List all shared folders configured in OpenMediaVault with their filesystem references and privileges",
+    "list_shares",
+    "List all shared folders",
     {},
     async () => {
       try {
-        const result = await client.getList("ShareMgmt", "getList", {
-          start: 0,
-          limit: 100,
-          sortfield: null,
-          sortdir: null,
-        });
-        return toolResult(JSON.stringify(result, null, 2));
-      } catch (error) {
-        return toolResult(`Error fetching shared folders: ${error}`, true);
+        const result = await client.getList("ShareMgmt", "getList", {});
+        return {
+          content: [
+            { type: "text", text: JSON.stringify(result, null, 2) },
+          ],
+        };
+      } catch (error: any) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: "Error listing shares: " + error.message,
+            },
+          ],
+        };
       }
     },
   );
 
-  // ── Get Shared Folder Privileges ─────────────────────────────────────
   server.tool(
-    "get_shared_folder_privileges",
-    "Get user and group access privileges for a specific shared folder",
+    "get_share_privileges",
+    "Get privileges for a shared folder",
     {
-      uuid: z
-        .string()
-        .describe(
-          "UUID of the shared folder. Use list_shared_folders to find UUIDs.",
-        ),
+      uuid: {
+        type: "string",
+        description: "UUID of the shared folder",
+        required: true,
+      },
     },
-    async ({ uuid }) => {
+    async (args: any) => {
       try {
         const result = await client.rpc("ShareMgmt", "getPrivileges", {
-          uuid,
+          uuid: args.uuid,
         });
-        return toolResult(JSON.stringify(result, null, 2));
-      } catch (error) {
-        return toolResult(
-          `Error fetching privileges for shared folder ${uuid}: ${error}`,
-          true,
-        );
+        return {
+          content: [
+            { type: "text", text: JSON.stringify(result, null, 2) },
+          ],
+        };
+      } catch (error: any) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: "Error getting share privileges: " + error.message,
+            },
+          ],
+        };
       }
     },
   );
 
-  // ── List SMB Shares ──────────────────────────────────────────────────
-  server.tool(
-    "list_smb_shares",
-    "List all SMB/CIFS (Windows/Samba) network shares configured in OpenMediaVault",
-    {},
-    async () => {
-      try {
-        const result = await client.getList("SMB", "getShareList", {
-          start: 0,
-          limit: 100,
-          sortfield: null,
-          sortdir: null,
-        });
-        return toolResult(JSON.stringify(result, null, 2));
-      } catch (error) {
-        return toolResult(`Error fetching SMB shares: ${error}`, true);
-      }
-    },
-  );
-
-  // ── Get SMB Settings ─────────────────────────────────────────────────
-  server.tool(
-    "get_smb_settings",
-    "Get global SMB/CIFS service settings including workgroup, description, and enabled status",
-    {},
-    async () => {
-      try {
-        const result = await client.rpc("SMB", "getSettings", {});
-        return toolResult(JSON.stringify(result, null, 2));
-      } catch (error) {
-        return toolResult(`Error fetching SMB settings: ${error}`, true);
-      }
-    },
-  );
-
-  // ── List NFS Shares ──────────────────────────────────────────────────
-  server.tool(
-    "list_nfs_shares",
-    "List all NFS (Network File System) shares configured in OpenMediaVault with client and export options",
-    {},
-    async () => {
-      try {
-        const result = await client.getList("NFS", "getShareList", {
-          start: 0,
-          limit: 100,
-          sortfield: null,
-          sortdir: null,
-        });
-        return toolResult(JSON.stringify(result, null, 2));
-      } catch (error) {
-        return toolResult(`Error fetching NFS shares: ${error}`, true);
-      }
-    },
-  );
-
-  // ── Get NFS Settings ─────────────────────────────────────────────────
-  server.tool(
-    "get_nfs_settings",
-    "Get global NFS service settings and enabled status",
-    {},
-    async () => {
-      try {
-        const result = await client.rpc("NFS", "getSettings", {});
-        return toolResult(JSON.stringify(result, null, 2));
-      } catch (error) {
-        return toolResult(`Error fetching NFS settings: ${error}`, true);
-      }
-    },
-  );
-
-  // ── List FTP Shares ──────────────────────────────────────────────────
   server.tool(
     "list_ftp_shares",
-    "List all FTP shares configured in OpenMediaVault",
+    "List FTP shares (if FTP plugin is installed)",
     {},
     async () => {
       try {
-        const result = await client.getList("FTP", "getShareList", {
-          start: 0,
-          limit: 100,
-          sortfield: null,
-          sortdir: null,
-        });
-        return toolResult(JSON.stringify(result, null, 2));
-      } catch (error) {
-        return toolResult(`Error fetching FTP shares: ${error}`, true);
+        let result;
+        if (client.omvVersion === "omv8") {
+          result = { note: "FTP is not available in OMV 8 core; install the openmediavault-ftp plugin if needed" };
+        } else {
+          result = await client.getList("FTP", "getShareList", {});
+        }
+        return {
+          content: [
+            { type: "text", text: JSON.stringify(result, null, 2) },
+          ],
+        };
+      } catch (error: any) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: "Error getting FTP shares: " + error.message,
+            },
+          ],
+        };
       }
     },
   );
 
-  // ── Get FTP Settings ─────────────────────────────────────────────────
   server.tool(
     "get_ftp_settings",
-    "Get global FTP service settings including port, max connections, and enabled status",
+    "Get FTP server settings (if FTP plugin is installed)",
     {},
     async () => {
       try {
-        const result = await client.rpc("FTP", "getSettings", {});
-        return toolResult(JSON.stringify(result, null, 2));
-      } catch (error) {
-        return toolResult(`Error fetching FTP settings: ${error}`, true);
+        let result;
+        if (client.omvVersion === "omv8") {
+          result = { note: "FTP is not available in OMV 8 core; install the openmediavault-ftp plugin if needed" };
+        } else {
+          result = await client.rpc("FTP", "getSettings", {});
+        }
+        return {
+          content: [
+            { type: "text", text: JSON.stringify(result, null, 2) },
+          ],
+        };
+      } catch (error: any) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: "Error getting FTP settings: " + error.message,
+            },
+          ],
+        };
       }
     },
   );

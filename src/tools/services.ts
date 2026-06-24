@@ -1,195 +1,308 @@
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { z } from "zod";
+
 import { OmvClient } from "../omv-client.js";
 
-function toolResult(text: string, isError = false) {
-  return { content: [{ type: "text" as const, text }], isError };
-}
-
-export function registerServiceTools(server: McpServer, client: OmvClient) {
-  // ── Get Services Status ──────────────────────────────────────────────
+export function registerServiceTools(
+  server: any,
+  client: OmvClient,
+): void {
   server.tool(
-    "get_services_status",
-    "Get the status of all OpenMediaVault services (SMB, NFS, SSH, FTP, rsync, etc.) showing which are enabled and running",
+    "get_service_status",
+    "Get status of all OMV services",
     {},
     async () => {
       try {
         const result = await client.rpc("Services", "getStatus", {});
-        return toolResult(JSON.stringify(result, null, 2));
-      } catch (error) {
-        return toolResult(
-          `Error fetching services status: ${error}`,
-          true,
-        );
+        return {
+          content: [
+            { type: "text", text: JSON.stringify(result, null, 2) },
+          ],
+        };
+      } catch (error: any) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: "Error getting service status: " + error.message,
+            },
+          ],
+        };
       }
     },
   );
 
-  // ── List Cron Jobs ───────────────────────────────────────────────────
   server.tool(
-    "list_cron_jobs",
-    "List all scheduled cron jobs configured in OpenMediaVault with command, schedule expression, and enabled status",
+    "get_smb_settings",
+    "Get SMB/CIFS settings",
     {},
     async () => {
       try {
-        const result = await client.getList("Cron", "getList", {
-          start: 0,
-          limit: 100,
-          sortfield: null,
-          sortdir: null,
-        });
-        return toolResult(JSON.stringify(result, null, 2));
-      } catch (error) {
-        return toolResult(`Error fetching cron jobs: ${error}`, true);
+        const result = await client.rpc("Smb", "getSettings", {});
+        return {
+          content: [
+            { type: "text", text: JSON.stringify(result, null, 2) },
+          ],
+        };
+      } catch (error: any) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: "Error getting SMB settings: " + error.message,
+            },
+          ],
+        };
       }
     },
   );
 
-  // ── Get SSH Settings ─────────────────────────────────────────────────
+  server.tool(
+    "get_smb_shares",
+    "Get SMB/CIFS shares",
+    {},
+    async () => {
+      try {
+        const result = await client.getList("Smb", "getShareList", {});
+        return {
+          content: [
+            { type: "text", text: JSON.stringify(result, null, 2) },
+          ],
+        };
+      } catch (error: any) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: "Error getting SMB shares: " + error.message,
+            },
+          ],
+        };
+      }
+    },
+  );
+
+  server.tool(
+    "get_nfs_settings",
+    "Get NFS settings",
+    {},
+    async () => {
+      try {
+        const result = await client.rpc("Nfs", "getSettings", {});
+        return {
+          content: [
+            { type: "text", text: JSON.stringify(result, null, 2) },
+          ],
+        };
+      } catch (error: any) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: "Error getting NFS settings: " + error.message,
+            },
+          ],
+        };
+      }
+    },
+  );
+
+  server.tool(
+    "get_nfs_shares",
+    "Get NFS shares",
+    {},
+    async () => {
+      try {
+        const result = await client.getList("Nfs", "getShareList", {});
+        return {
+          content: [
+            { type: "text", text: JSON.stringify(result, null, 2) },
+          ],
+        };
+      } catch (error: any) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: "Error getting NFS shares: " + error.message,
+            },
+          ],
+        };
+      }
+    },
+  );
+
   server.tool(
     "get_ssh_settings",
-    "Get SSH service settings including port, password authentication, and enabled status",
+    "Get SSH server settings",
     {},
     async () => {
       try {
-        const result = await client.rpc("SSH", "getSettings", {});
-        return toolResult(JSON.stringify(result, null, 2));
-      } catch (error) {
-        return toolResult(`Error fetching SSH settings: ${error}`, true);
+        let result;
+        if (client.omvVersion === "omv8") {
+          result = await client.rpc("SSH", "get", {});
+        } else {
+          result = await client.rpc("SSH", "getSettings", {});
+        }
+        return {
+          content: [
+            { type: "text", text: JSON.stringify(result, null, 2) },
+          ],
+        };
+      } catch (error: any) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: "Error getting SSH settings: " + error.message,
+            },
+          ],
+        };
       }
     },
   );
 
-  // ── List Rsync Jobs ──────────────────────────────────────────────────
-  server.tool(
-    "list_rsync_jobs",
-    "List all rsync backup/sync jobs configured in OpenMediaVault",
-    {},
-    async () => {
-      try {
-        const result = await client.getList("Rsync", "getList", {
-          start: 0,
-          limit: 100,
-          sortfield: null,
-          sortdir: null,
-        });
-        return toolResult(JSON.stringify(result, null, 2));
-      } catch (error) {
-        return toolResult(`Error fetching rsync jobs: ${error}`, true);
-      }
-    },
-  );
-
-  // ── List Rsync Modules ───────────────────────────────────────────────
-  server.tool(
-    "list_rsync_modules",
-    "List rsync daemon modules (server-side rsync shares) configured in OpenMediaVault",
-    {},
-    async () => {
-      try {
-        const result = await client.getList("Rsync", "getModuleList", {
-          start: 0,
-          limit: 100,
-          sortfield: null,
-          sortdir: null,
-        });
-        return toolResult(JSON.stringify(result, null, 2));
-      } catch (error) {
-        return toolResult(`Error fetching rsync modules: ${error}`, true);
-      }
-    },
-  );
-
-  // ── Get Rsync Settings ───────────────────────────────────────────────
   server.tool(
     "get_rsync_settings",
-    "Get global rsync daemon settings",
+    "Get Rsync server settings and module list",
     {},
     async () => {
       try {
-        const result = await client.rpc("Rsync", "getSettings", {});
-        return toolResult(JSON.stringify(result, null, 2));
-      } catch (error) {
-        return toolResult(
-          `Error fetching rsync settings: ${error}`,
-          true,
-        );
+        let settings;
+        let modules;
+        if (client.omvVersion === "omv8") {
+          // OMV 8: Rsync settings/modules are on Rsyncd service
+          settings = await client.rpc("Rsyncd", "getSettings", {});
+          modules = await client.getList("Rsyncd", "getModuleList", {});
+        } else {
+          settings = await client.rpc("Rsync", "getSettings", {});
+          modules = await client.getList("Rsync", "getModuleList", {});
+        }
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify({ settings, modules }, null, 2),
+            },
+          ],
+        };
+      } catch (error: any) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: "Error getting Rsync settings: " + error.message,
+            },
+          ],
+        };
       }
     },
   );
 
-  // ── Get Notification Settings ────────────────────────────────────────
   server.tool(
-    "get_notification_settings",
-    "Get email notification settings configured in OpenMediaVault",
+    "get_cron_jobs",
+    "Get scheduled cron jobs",
     {},
     async () => {
       try {
-        const result = await client.rpc("EmailNotification", "get", {});
-        return toolResult(JSON.stringify(result, null, 2));
-      } catch (error) {
-        return toolResult(
-          `Error fetching notification settings: ${error}`,
-          true,
-        );
+        const result = await client.getList("Cron", "getList", {});
+        return {
+          content: [
+            { type: "text", text: JSON.stringify(result, null, 2) },
+          ],
+        };
+      } catch (error: any) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: "Error getting cron jobs: " + error.message,
+            },
+          ],
+        };
       }
     },
   );
 
-  // ── Get Update Information ───────────────────────────────────────────
   server.tool(
-    "get_updates",
-    "Check for available software updates in OpenMediaVault",
+    "get_email_settings",
+    "Get email notification settings",
     {},
     async () => {
       try {
-        const result = await client.rpc("Apt", "getUpgraded", {});
-        return toolResult(JSON.stringify(result, null, 2));
-      } catch (error) {
-        return toolResult(
-          `Error fetching update information: ${error}`,
-          true,
-        );
+        let result;
+        if (client.omvVersion === "omv8") {
+          result = await client.rpc("Notification", "get", {});
+        } else {
+          result = await client.rpc("EmailNotification", "get", {});
+        }
+        return {
+          content: [
+            { type: "text", text: JSON.stringify(result, null, 2) },
+          ],
+        };
+      } catch (error: any) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: "Error getting email settings: " + error.message,
+            },
+          ],
+        };
       }
     },
   );
 
-  // ── List Installed Plugins ───────────────────────────────────────────
   server.tool(
-    "list_plugins",
-    "List all installed OpenMediaVault plugins",
+    "get_installed_plugins",
+    "Get list of installed OMV plugins",
     {},
     async () => {
       try {
-        const result = await client.rpc("Plugin", "getList", {
-          start: 0,
-          limit: 100,
-          sortfield: null,
-          sortdir: null,
-        });
-        return toolResult(JSON.stringify(result, null, 2));
-      } catch (error) {
-        return toolResult(`Error fetching plugin list: ${error}`, true);
+        const result = await client.getList("Plugin", "getList", {});
+        return {
+          content: [
+            { type: "text", text: JSON.stringify(result, null, 2) },
+          ],
+        };
+      } catch (error: any) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: "Error getting plugins: " + error.message,
+            },
+          ],
+        };
       }
     },
   );
 
-  // ── Get Watchdog Settings ────────────────────────────────────────────
   server.tool(
     "get_watchdog_settings",
-    "Get hardware watchdog timer settings for system health monitoring",
+    "Get watchdog settings (if available)",
     {},
     async () => {
       try {
-        const result = await client.rpc("WatchDog", "getSettings", {});
-        return toolResult(
-          JSON.stringify(result, null, 2),
-        );
-      } catch (error) {
-        return toolResult(
-          `Error fetching watchdog settings: ${error}`,
-          true,
-        );
+        let result;
+        if (client.omvVersion === "omv8") {
+          result = { note: "WatchDog service is not available in OMV 8 core" };
+        } else {
+          result = await client.rpc("WatchDog", "getSettings", {});
+        }
+        return {
+          content: [
+            { type: "text", text: JSON.stringify(result, null, 2) },
+          ],
+        };
+      } catch (error: any) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: "WatchDog info not available: " + error.message,
+            },
+          ],
+        };
       }
     },
   );
