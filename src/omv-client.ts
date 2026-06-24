@@ -1,8 +1,8 @@
+
 export interface OmvConfig {
   host: string;
   username: string;
   password: string;
-  allowSelfSigned: boolean;
 }
 
 interface OmvResponse {
@@ -10,37 +10,60 @@ interface OmvResponse {
   error: { code: number; message: string; trace?: string } | null;
 }
 
+export type OmvVersion = "omv5" | "omv6" | "omv8" | "unknown";
+
 export class OmvClient {
   private baseUrl: string;
-  private sessionId: string | null = null;
-  private cookie: string | null = null;
+  private sessionCookie: string | null = null;
+  private _omvVersion: OmvVersion = "unknown";
+  private _versionChecked = false;
 
   constructor(private config: OmvConfig) {
-    this.baseUrl = `https://${config.host}`;
-
-    if (config.allowSelfSigned) {
-      process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
-    }
+    this.baseUrl = "http://" + config.host;
   }
 
-  private parseCookies(setCookieHeaders: string[]): string {
-    const cookies: string[] = [];
-    for (const header of setCookieHeaders) {
-      const parts = header.split(";");
-      if (parts[0]) {
-        cookies.push(parts[0].trim());
-      }
-    }
-    return cookies.join("; ");
+  get omvVersion(): OmvVersion {
+    return this._omvVersion;
   }
 
-  private extractSessionId(cookieStr: string): string | null {
-    const match = cookieStr.match(/PHPSESSID=([^;]+)/);
-    return match ? match[1] : null;
+  private async rawRpc(
+    service: string,
+    method: string,
+    params: Record<string, unknown> = {},
+  ): Promise<unknown> {
+    const url = this.baseUrl + "/rpc.php";
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+    };
+    if (this.sessionCookie) {
+      headers["Cookie"] = this.sessionCookie;
+    }
+
+    const response = await fetch(url, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ service, method, params, options: null }),
+    });
+
+    if (response.status === 401) {
+      this.sessionCookie = null;
+      throw new Error("Session expired");
+    }
+    if (!response.ok) {
+      throw new Error("OMV API error (" + response.status + "): " + await response.text());
+    }
+
+    const data = (await response.json()) as OmvResponse;
+    if (data.error) {
+      throw new Error(
+        "OMV RPC error [" + service + "." + method + "]: " + data.error.message,
+      );
+    }
+    return data.response;
   }
 
   async login(): Promise<void> {
-    const url = `${this.baseUrl}/rpc.php`;
+    const url = this.baseUrl + "/rpc.php";
     const body = {
       service: "Session",
       method: "login",
@@ -53,44 +76,71 @@ export class OmvClient {
 
     const response = await fetch(url, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
     });
 
     if (!response.ok) {
       throw new Error(
-        `OMV login failed (${response.status}): ${await response.text()}`,
+        "OMV login failed (" + response.status + "): " + await response.text(),
       );
-    }
-
-    // Extract Set-Cookie headers
-    const setCookieHeader = response.headers.get("set-cookie");
-    if (setCookieHeader) {
-      this.cookie = this.parseCookies([setCookieHeader]);
-      this.sessionId = this.extractSessionId(setCookieHeader);
     }
 
     const data = (await response.json()) as OmvResponse;
-
     if (data.error) {
       throw new Error(
-        `OMV login error: ${data.error.message} (code ${data.error.code})`,
+        "OMV login error: " + data.error.message,
       );
     }
 
-    // If we didn't get the session ID from cookie, try to extract it from the response
-    if (!this.sessionId && data.response && typeof data.response === "object") {
-      const resp = data.response as Record<string, unknown>;
-      if (resp["PHPSESSID"]) {
-        this.sessionId = resp["PHPSESSID"] as string;
+    // Get session cookie from Set-Cookie header
+    const setCookie = response.headers.get("set-cookie");
+    if (setCookie) {
+      const cookies = setCookie.split(",");
+      for (const c of cookies) {
+        if (c.includes("OPENMEDIAVAULT-SESSIONID=")) {
+          this.sessionCookie = c.split(";")[0].trim();
+          break;
+        }
       }
     }
 
-    if (!this.sessionId && this.cookie) {
-      this.sessionId = this.extractSessionId(this.cookie);
+    // Fallback: extract sessionid from response body
+    if (!this.sessionCookie && data.response && typeof data.response === "object") {
+      const resp = data.response as Record<string, unknown>;
+      if (resp["sessionid"]) {
+        this.sessionCookie = "OPENMEDIAVAULT-SESSIONID=" + resp["sessionid"];
+      }
     }
+
+    if (!this.sessionCookie) {
+      throw new Error("Login succeeded but no session cookie was returned");
+    }
+  }
+
+  async detectVersion(): Promise<OmvVersion> {
+    if (this._versionChecked) return this._omvVersion;
+
+    await this.login();
+
+    try {
+      await this.rawRpc("UserMgmt", "getUserList", {
+        start: 0, limit: 1, sortfield: null, sortdir: null,
+      });
+      this._omvVersion = "omv8";
+    } catch {
+      try {
+        await this.rawRpc("UserMgmt", "getList", {
+          start: 0, limit: 1, sortfield: null, sortdir: null,
+        });
+        this._omvVersion = "omv6";
+      } catch {
+        this._omvVersion = "unknown";
+      }
+    }
+
+    this._versionChecked = true;
+    return this._omvVersion;
   }
 
   async rpc(
@@ -98,55 +148,21 @@ export class OmvClient {
     method: string,
     params: Record<string, unknown> = {},
   ): Promise<unknown> {
-    if (!this.sessionId && !this.cookie) {
+    if (!this._versionChecked) {
+      await this.detectVersion();
+    }
+    if (!this.sessionCookie) {
       await this.login();
     }
-
-    const url = `${this.baseUrl}/rpc.php`;
-    const body = {
-      service,
-      method,
-      params,
-      options: null,
-    };
-
-    const headers: Record<string, string> = {
-      "Content-Type": "application/json",
-    };
-
-    if (this.cookie) {
-      headers["Cookie"] = this.cookie;
+    try {
+      return await this.rawRpc(service, method, params);
+    } catch (error: any) {
+      if (error.message === "Session expired") {
+        await this.login();
+        return this.rawRpc(service, method, params);
+      }
+      throw error;
     }
-    if (this.sessionId) {
-      headers["X-OPENMEDIAVAULT-SESSIONID"] = this.sessionId;
-    }
-
-    const response = await fetch(url, {
-      method: "POST",
-      headers,
-      body: JSON.stringify(body),
-    });
-
-    if (response.status === 401) {
-      // Session expired — re-login and retry
-      await this.login();
-      return this.rpc(service, method, params);
-    }
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`OMV API error (${response.status}): ${errorText}`);
-    }
-
-    const data = (await response.json()) as OmvResponse;
-
-    if (data.error) {
-      throw new Error(
-        `OMV RPC error [${service}.${method}]: ${data.error.message} (code ${data.error.code})`,
-      );
-    }
-
-    return data.response;
   }
 
   async getList(
@@ -155,27 +171,17 @@ export class OmvClient {
     params: Record<string, unknown> = {},
   ): Promise<unknown[]> {
     const defaultParams = {
-      start: 0,
-      limit: 100,
-      sortfield: null,
-      sortdir: null,
-      ...params,
+      start: 0, limit: 100, sortfield: null, sortdir: null, ...params,
     };
-
     const result = await this.rpc(service, method, defaultParams);
 
-    // Many OMV list responses return { data: [...], total: N }
     if (result && typeof result === "object" && !Array.isArray(result)) {
       const obj = result as Record<string, unknown>;
       if (Array.isArray(obj["data"])) {
         return obj["data"];
       }
     }
-
-    if (Array.isArray(result)) {
-      return result;
-    }
-
+    if (Array.isArray(result)) return result;
     return result ? [result] : [];
   }
 }
